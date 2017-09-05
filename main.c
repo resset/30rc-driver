@@ -21,8 +21,6 @@
 #include "chprintf.h"
 #include "shell.h"
 
-#include "usbcfg.h"
-
 /*===========================================================================*/
 /* Command line related.                                                     */
 /*===========================================================================*/
@@ -89,7 +87,7 @@ static const ShellCommand commands[] = {
 };
 
 static const ShellConfig shell_cfg1 = {
-  (BaseSequentialStream *)&SDU1,
+  (BaseSequentialStream *)&SD2,
   commands
 };
 
@@ -114,32 +112,6 @@ static const PWMConfig pwmcfg = {
   },
   /* HW dependent part.*/
   0,
-  0
-};
-
-/*
- * SPI1 configuration structure.
- * Speed 5.25MHz, CPHA=1, CPOL=1, 8bits frames, MSb transmitted first.
- * The slave select line is the pin GPIOE_CS_SPI on the port GPIOE.
- */
-static const SPIConfig spi1cfg = {
-  NULL,
-  /* HW dependent part.*/
-  GPIOE,
-  GPIOE_CS_SPI,
-  SPI_CR1_BR_0 | SPI_CR1_BR_1 | SPI_CR1_CPOL | SPI_CR1_CPHA
-};
-
-/*
- * SPI2 configuration structure.
- * Speed 21MHz, CPHA=0, CPOL=0, 8bits frames, MSb transmitted first.
- * The slave select line is the pin 12 on the port GPIOA.
- */
-static const SPIConfig spi2cfg = {
-  NULL,
-  /* HW dependent part.*/
-  GPIOB,
-  12,
   0
 };
 
@@ -222,22 +194,6 @@ int main(void) {
   shellInit();
 
   /*
-   * Initializes a serial-over-USB CDC driver.
-   */
-  sduObjectInit(&SDU1);
-  sduStart(&SDU1, &serusbcfg);
-
-  /*
-   * Activates the USB driver and then the USB bus pull-up on D+.
-   * Note, a delay is inserted in order to not have to disconnect the cable
-   * after a reset.
-   */
-  usbDisconnectBus(serusbcfg.usbp);
-  chThdSleepMilliseconds(1000);
-  usbStart(serusbcfg.usbp, &usbcfg);
-  usbConnectBus(serusbcfg.usbp);
-
-  /*
    * Activates the serial driver 2 using the driver default configuration.
    * PA2(TX) and PA3(RX) are routed to USART2.
    */
@@ -261,24 +217,15 @@ int main(void) {
                     NORMALPRIO + 10, Thread1, NULL);
 
   /*
-   * Normal main() thread activity, in this demo it just performs
-   * a shell respawn upon its termination.
+   * Normal main() thread activity.
    */
   while (true) {
-    if (!shelltp) {
-      if (SDU1.config->usbp->state == USB_ACTIVE) {
-        /* Spawns a new shell.*/
-        shelltp = shellCreate(&shell_cfg1, SHELL_WA_SIZE, NORMALPRIO);
-      }
+    if (!shelltp)
+      shelltp = shellCreate(&shell_cfg1, SHELL_WA_SIZE, NORMALPRIO);
+    else if (chThdTerminatedX(shelltp)) {
+      chThdRelease(shelltp);    /* Recovers memory of the previous shell.   */
+      shelltp = NULL;           /* Triggers spawning of a new shell.        */
     }
-    else {
-      /* If the previous shell exited.*/
-      if (chThdTerminatedX(shelltp)) {
-        /* Recovers memory of the previous shell.*/
-        chThdRelease(shelltp);
-        shelltp = NULL;
-      }
-    }
-    chThdSleepMilliseconds(500);
+    chThdSleepMilliseconds(1000);
   }
 }
