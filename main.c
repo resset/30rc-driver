@@ -20,7 +20,6 @@
 
 #include "chprintf.h"
 #include "shell.h"
-#include "lis302dl.h"
 
 #include "usbcfg.h"
 
@@ -156,11 +155,6 @@ static THD_FUNCTION(Thread1, arg) {
   (void)arg;
   chRegSetThreadName("reader");
 
-  /* LIS302DL initialization.*/
-  lis302dlWriteRegister(&SPID1, LIS302DL_CTRL_REG1, 0x43);
-  lis302dlWriteRegister(&SPID1, LIS302DL_CTRL_REG2, 0x00);
-  lis302dlWriteRegister(&SPID1, LIS302DL_CTRL_REG3, 0x00);
-
   /* Reader thread loop.*/
   time = chVTGetSystemTime();
   while (true) {
@@ -172,16 +166,6 @@ static THD_FUNCTION(Thread1, arg) {
       xbuf[i] = xbuf[i - 1];
       ybuf[i] = ybuf[i - 1];
     }
-
-    /* Reading MEMS accelerometer X and Y registers.*/
-    xbuf[0] = (int8_t)lis302dlReadRegister(&SPID1, LIS302DL_OUTX);
-    ybuf[0] = (int8_t)lis302dlReadRegister(&SPID1, LIS302DL_OUTY);
-
-    /* Transmitting accelerometer the data over SPI2.*/
-    spiSelect(&SPID2);
-    spiSend(&SPID2, 4, xbuf);
-    spiSend(&SPID2, 4, ybuf);
-    spiUnselect(&SPID2);
 
     /* Calculating average of the latest four accelerometer readings.*/
     x = ((int32_t)xbuf[0] + (int32_t)xbuf[1] +
@@ -260,29 +244,6 @@ int main(void) {
   sdStart(&SD2, NULL);
   palSetPadMode(GPIOA, 2, PAL_MODE_ALTERNATE(7));
   palSetPadMode(GPIOA, 3, PAL_MODE_ALTERNATE(7));
-
-  /*
-   * Initializes the SPI driver 1 in order to access the MEMS. The signals
-   * are already initialized in the board file.
-   */
-  spiStart(&SPID1, &spi1cfg);
-
-  /*
-   * Initializes the SPI driver 2. The SPI2 signals are routed as follow:
-   * PB12 - NSS.
-   * PB13 - SCK.
-   * PB14 - MISO.
-   * PB15 - MOSI.
-   */
-  spiStart(&SPID2, &spi2cfg);
-  palSetPad(GPIOB, 12);
-  palSetPadMode(GPIOB, 12, PAL_MODE_OUTPUT_PUSHPULL |
-                           PAL_STM32_OSPEED_HIGHEST);           /* NSS.     */
-  palSetPadMode(GPIOB, 13, PAL_MODE_ALTERNATE(5) |
-                           PAL_STM32_OSPEED_HIGHEST);           /* SCK.     */
-  palSetPadMode(GPIOB, 14, PAL_MODE_ALTERNATE(5));              /* MISO.    */
-  palSetPadMode(GPIOB, 15, PAL_MODE_ALTERNATE(5) |
-                           PAL_STM32_OSPEED_HIGHEST);           /* MOSI.    */
 
   /*
    * Initializes the PWM driver 4, routes the TIM4 outputs to the board LEDs.
