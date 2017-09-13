@@ -21,6 +21,12 @@
 #include "chprintf.h"
 #include "shell.h"
 
+#include <stdlib.h>
+
+#define LINE_CLK 10
+#define LINE_DIR 11
+#define LINE_ENA 12
+
 /*===========================================================================*/
 /* Command line related.                                                     */
 /*===========================================================================*/
@@ -79,10 +85,78 @@ static void cmd_test(BaseSequentialStream *chp, int argc, char *argv[]) {
   chThdWait(tp);
 }
 
+static void cmd_enable(BaseSequentialStream *chp, int argc, char *argv[]) {
+  (void)argv;
+  (void)argc;
+
+  palSetPad(GPIOD, GPIOD_LED5);
+  palSetPad(GPIOE, LINE_ENA);
+  chprintf(chp, "Stepper enabled\r\n");
+}
+
+static void cmd_disable(BaseSequentialStream *chp, int argc, char *argv[]) {
+  (void)argv;
+  (void)argc;
+
+  palClearPad(GPIOD, GPIOD_LED5);
+  palClearPad(GPIOE, LINE_ENA);
+  chprintf(chp, "Stepper disabled\r\n");
+}
+
+static void cmd_left(BaseSequentialStream *chp, int argc, char *argv[]) {
+  (void)argv;
+  (void)argc;
+
+  palClearPad(GPIOD, GPIOD_LED3);
+  palClearPad(GPIOE, LINE_DIR);
+  chprintf(chp, "Stepper moves left\r\n");
+}
+
+static void cmd_right(BaseSequentialStream *chp, int argc, char *argv[]) {
+  (void)argv;
+  (void)argc;
+
+  palSetPad(GPIOD, GPIOD_LED3);
+  palSetPad(GPIOE, LINE_DIR);
+  chprintf(chp, "Stepper moves right\r\n");
+}
+
+static void cmd_step(BaseSequentialStream *chp, int argc, char *argv[]) {
+  int moves;
+  int delay = 5;
+
+  if (argc == 0) {
+    moves = 800;
+  } else {
+    moves = atoi(argv[1]);
+  }
+  chprintf(chp, "Stepper: %d moves...\r\n", moves);
+
+  for (uint16_t i = 0; i < moves; i++) {
+      palClearPad(GPIOD, GPIOD_LED4);
+      palClearPad(GPIOE, LINE_CLK);
+      chThdSleepMilliseconds(delay);
+      palSetPad(GPIOD, GPIOD_LED4);
+      palSetPad(GPIOE, LINE_CLK);
+      chThdSleepMilliseconds(delay);
+      chprintf(chp, "Step: %d\r\n", i);
+  }
+  palClearPad(GPIOD, GPIOD_LED4);
+  palClearPad(GPIOE, LINE_CLK);
+
+  chprintf(chp, "Done.\r\n");
+}
+
 static const ShellCommand commands[] = {
   {"mem", cmd_mem},
   {"threads", cmd_threads},
   {"test", cmd_test},
+
+  {"enable", cmd_enable},
+  {"disable", cmd_disable},
+  {"left", cmd_left},
+  {"right", cmd_right},
+  {"s", cmd_step},
   {NULL, NULL}
 };
 
@@ -96,32 +170,11 @@ static const ShellConfig shell_cfg1 = {
 /*===========================================================================*/
 
 /*
- * PWM configuration structure.
- * Cyclic callback enabled, channels 1 and 4 enabled without callbacks,
- * the active state is a logic one.
- */
-static const PWMConfig pwmcfg = {
-  100000,                                   /* 100kHz PWM clock frequency.  */
-  128,                                      /* PWM period is 128 cycles.    */
-  NULL,
-  {
-   {PWM_OUTPUT_ACTIVE_HIGH, NULL},
-   {PWM_OUTPUT_ACTIVE_HIGH, NULL},
-   {PWM_OUTPUT_ACTIVE_HIGH, NULL},
-   {PWM_OUTPUT_ACTIVE_HIGH, NULL}
-  },
-  /* HW dependent part.*/
-  0,
-  0
-};
-
-/*
  * This is a periodic thread that reads accelerometer and outputs
  * result to SPI2 and PWM.
  */
 static THD_WORKING_AREA(waThread1, 128);
 static THD_FUNCTION(Thread1, arg) {
-  static int8_t xbuf[4], ybuf[4];   /* Last accelerometer data.*/
   systime_t time;                   /* Next deadline.*/
 
   (void)arg;
@@ -130,39 +183,6 @@ static THD_FUNCTION(Thread1, arg) {
   /* Reader thread loop.*/
   time = chVTGetSystemTime();
   while (true) {
-    int32_t x, y;
-    unsigned i;
-
-    /* Keeping an history of the latest four accelerometer readings.*/
-    for (i = 3; i > 0; i--) {
-      xbuf[i] = xbuf[i - 1];
-      ybuf[i] = ybuf[i - 1];
-    }
-
-    /* Calculating average of the latest four accelerometer readings.*/
-    x = ((int32_t)xbuf[0] + (int32_t)xbuf[1] +
-         (int32_t)xbuf[2] + (int32_t)xbuf[3]) / 4;
-    y = ((int32_t)ybuf[0] + (int32_t)ybuf[1] +
-         (int32_t)ybuf[2] + (int32_t)ybuf[3]) / 4;
-
-    /* Reprogramming the four PWM channels using the accelerometer data.*/
-    if (y < 0) {
-      pwmEnableChannel(&PWMD4, 0, (pwmcnt_t)-y);
-      pwmEnableChannel(&PWMD4, 2, (pwmcnt_t)0);
-    }
-    else {
-      pwmEnableChannel(&PWMD4, 2, (pwmcnt_t)y);
-      pwmEnableChannel(&PWMD4, 0, (pwmcnt_t)0);
-    }
-    if (x < 0) {
-      pwmEnableChannel(&PWMD4, 1, (pwmcnt_t)-x);
-      pwmEnableChannel(&PWMD4, 3, (pwmcnt_t)0);
-    }
-    else {
-      pwmEnableChannel(&PWMD4, 3, (pwmcnt_t)x);
-      pwmEnableChannel(&PWMD4, 1, (pwmcnt_t)0);
-    }
-
     /* Waiting until the next 250 milliseconds time interval.*/
     chThdSleepUntil(time += MS2ST(100));
   }
@@ -202,13 +222,24 @@ int main(void) {
   palSetPadMode(GPIOA, 3, PAL_MODE_ALTERNATE(7));
 
   /*
-   * Initializes the PWM driver 4, routes the TIM4 outputs to the board LEDs.
+   * Initializes board LEDs.
    */
-  pwmStart(&PWMD4, &pwmcfg);
-  palSetPadMode(GPIOD, GPIOD_LED4, PAL_MODE_ALTERNATE(2));      /* Green.   */
-  palSetPadMode(GPIOD, GPIOD_LED3, PAL_MODE_ALTERNATE(2));      /* Orange.  */
-  palSetPadMode(GPIOD, GPIOD_LED5, PAL_MODE_ALTERNATE(2));      /* Red.     */
-  palSetPadMode(GPIOD, GPIOD_LED6, PAL_MODE_ALTERNATE(2));      /* Blue.    */
+  palSetPadMode(GPIOD, GPIOD_LED4, PAL_MODE_OUTPUT_PUSHPULL);      /* Green.   */
+  palSetPadMode(GPIOD, GPIOD_LED3, PAL_MODE_OUTPUT_PUSHPULL);      /* Orange.  */
+  palSetPadMode(GPIOD, GPIOD_LED5, PAL_MODE_OUTPUT_PUSHPULL);      /* Red.     */
+  palSetPadMode(GPIOD, GPIOD_LED6, PAL_MODE_OUTPUT_PUSHPULL);      /* Blue.    */
+
+  palSetPadMode(GPIOE, LINE_CLK, PAL_MODE_OUTPUT_PUSHPULL);
+  palSetPadMode(GPIOE, LINE_DIR, PAL_MODE_OUTPUT_PUSHPULL);
+  palSetPadMode(GPIOE, LINE_ENA, PAL_MODE_OUTPUT_PUSHPULL);
+
+  palClearPad(GPIOE, LINE_CLK);
+  palSetPad(GPIOE, LINE_DIR);
+  palClearPad(GPIOE, LINE_ENA);
+
+  palClearPad(GPIOD, GPIOD_LED4);
+  palSetPad(GPIOD, GPIOD_LED3);
+  palClearPad(GPIOD, GPIOD_LED5);
 
   /*
    * Creates the example thread.
