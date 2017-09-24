@@ -1,5 +1,5 @@
 /*
-    30RC - Copyright (C) 2014-2016 Mateusz Tomaszkiewicz
+    30RC - Copyright (C) 2017 Mateusz Tomaszkiewicz
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -17,10 +17,6 @@
 #ifndef _SHELL_MAIN_H_
 #define _SHELL_MAIN_H_
 
-#include "hal.h"
-#include "shell.h"
-
-extern THD_WORKING_AREA(waShell, 128);
-THD_FUNCTION(thShell, arg);
+void shell_init(void);
 
 #endif /* _SHELL_MAIN_H_ */

@@ -1,6 +1,6 @@
 /*
     ChibiOS/RT - Copyright (C) 2006-2013 Giovanni Di Sirio
-    30RC - Copyright (C) 2014-2016 Mateusz Tomaszkiewicz
+    30RC - Copyright (C) 2017 Mateusz Tomaszkiewicz
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 */
 
 #include "ch.h"
-#include "hal.h"
-
 #include "chprintf.h"
 #include "shell.h"
 
