@@ -18,8 +18,6 @@
 #define _SHELL_UTILS_H_
 
 #include "ch.h"
-
-void cmd_mem(BaseSequentialStream *chp, int argc, char *argv[]);
-void cmd_threads(BaseSequentialStream *chp, int argc, char *argv[]);
+#include "hal.h"
 
 #endif /* _SHELL_UTILS_H_ */

@@ -21,7 +21,6 @@
 
 #include <stdlib.h>
 
-#include "shell_utils.h"
 #include "shell_main.h"
 
 #define LINE_CLK 10
@@ -29,6 +28,8 @@
 #define LINE_ENA 12
 
 #define SHELL_WA_SIZE THD_WORKING_AREA_SIZE(2048)
+
+static thread_t *shelltp = NULL;
 
 static void cmd_enable(BaseSequentialStream *chp, int argc, char *argv[]) {
   (void)argv;
@@ -93,8 +94,6 @@ static void cmd_step(BaseSequentialStream *chp, int argc, char *argv[]) {
 }
 
 static const ShellCommand commands[] = {
-  {"mem", cmd_mem},
-  {"threads", cmd_threads},
   {"enable", cmd_enable},
   {"disable", cmd_disable},
   {"left", cmd_left},
@@ -108,23 +107,37 @@ static const ShellConfig shell_cfg1 = {
   commands
 };
 
+/*
+ * Shell exit event.
+ */
+static void ShellHandler(eventid_t id) {
+
+  (void)id;
+  if (chThdTerminatedX(shelltp)) {
+    chThdWait(shelltp);                 /* Returning memory to heap.        */
+    shelltp = NULL;
+  }
+}
+
 THD_WORKING_AREA(waShell, 128);
 THD_FUNCTION(thShell, arg) {
   (void)arg;
-  thread_t *shelltp = NULL;
 
-  chRegSetThreadName("shell");
+  static const evhandler_t evhndl[] = {
+    ShellHandler
+  };
+  event_listener_t el0;
 
   shellInit();
 
+  chEvtRegister(&shell_terminated, &el0, 0);
   while (true) {
-    if (!shelltp)
-      shelltp = shellCreate(&shell_cfg1, SHELL_WA_SIZE, NORMALPRIO);
-    else if (chThdTerminatedX(shelltp)) {
-      chThdRelease(shelltp);    /* Recovers memory of the previous shell.   */
-      shelltp = NULL;           /* Triggers spawning of a new shell.        */
+    if (!shelltp) {
+      shelltp = chThdCreateFromHeap(NULL, SHELL_WA_SIZE,
+                                    "shell", NORMALPRIO + 1,
+                                    shellThread, (void *)&shell_cfg1);
     }
-    chThdSleepMilliseconds(1000);
+    chEvtDispatch(evhndl, chEvtWaitOneTimeout(ALL_EVENTS, MS2ST(500)));
   }
 }
 
